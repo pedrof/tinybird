@@ -1,0 +1,221 @@
+name: Build and Push Container Images
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+    tags:
+      - 'v*.*.*'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  REGISTRY: git.shadyknollcave.io
+  REGISTRY_USER: micro
+  TINYBIRD_IMAGE: git.shadyknollcave.io/micro/tinybird-local
+  ANALYTICS_IMAGE: git.shadyknollcave.io/micro/traffic-analytics
+
+jobs:
+  build-traffic-analytics:
+    name: Build Traffic Analytics
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone Traffic Analytics repository
+        run: |
+          git clone --depth 1 https://github.com/TryGhost/TrafficAnalytics.git traffic-analytics-src
+          cd traffic-analytics-src
+          echo "TRAFFIC_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set up Podman
+        run: |
+          # Podman is preferred per user setup
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman version
+
+      - name: Log in to Gitea Container Registry
+        run: |
+          echo "${{ secrets.GITEA_TOKEN }}" | podman login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
+
+      - name: Extract metadata (tags)
+        id: meta
+        run: |
+          TAGS=""
+
+          # Add branch-based tags
+          if [ "${{ github.ref_type }}" == "branch" ]; then
+            BRANCH_NAME=$(echo "${{ github.ref_name }}" | sed 's/[^a-zA-Z0-9._-]/-/g')
+            TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:${BRANCH_NAME}"
+
+            # Add SHA tag
+            SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+            TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:${BRANCH_NAME}-${SHORT_SHA}"
+
+            # Add latest tag for main branch
+            if [ "${{ github.ref_name }}" == "main" ]; then
+              TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:latest"
+            fi
+          fi
+
+          # Add version tags for releases
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:${VERSION}"
+
+            # Add semver tags
+            if [[ $VERSION =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              MAJOR="${BASH_REMATCH[1]}"
+              MINOR="${BASH_REMATCH[2]}"
+              TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:${MAJOR}"
+              TAGS="$TAGS ${{ env.ANALYTICS_IMAGE }}:${MAJOR}.${MINOR}"
+            fi
+          fi
+
+          echo "tags=$TAGS" >> $GITHUB_OUTPUT
+
+      - name: Build Traffic Analytics
+        run: |
+          cd traffic-analytics-src
+
+          # Build with podman
+          podman build \
+            --platform linux/amd64 \
+            --label "org.opencontainers.image.source=https://github.com/TryGhost/TrafficAnalytics" \
+            --label "org.opencontainers.image.revision=${{ github.sha }}" \
+            --label "org.opencontainers.image.created=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
+            -t ${{ env.ANALYTICS_IMAGE }}:build \
+            .
+
+      - name: Push Traffic Analytics
+        run: |
+          for TAG in ${{ steps.meta.outputs.tags }}; do
+            echo "Tagging and pushing: $TAG"
+            podman tag ${{ env.ANALYTICS_IMAGE }}:build $TAG
+            podman push $TAG
+          done
+
+  mirror-tinybird:
+    name: Mirror Tinybird Local
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Podman
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          podman version
+
+      - name: Log in to Gitea Container Registry
+        run: |
+          echo "${{ secrets.GITEA_TOKEN }}" | podman login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
+
+      - name: Pull and mirror Tinybird Local
+        run: |
+          # Pull upstream image
+          podman pull --platform linux/amd64 docker.io/tinybirdco/tinybird-local:latest
+
+          # Tag for our registry
+          podman tag docker.io/tinybirdco/tinybird-local:latest ${{ env.TINYBIRD_IMAGE }}:latest
+
+          # Tag with date
+          DATE_TAG=$(date +%Y%m%d)
+          podman tag docker.io/tinybirdco/tinybird-local:latest ${{ env.TINYBIRD_IMAGE }}:${DATE_TAG}
+
+          # Push all tags
+          podman push ${{ env.TINYBIRD_IMAGE }}:latest
+          podman push ${{ env.TINYBIRD_IMAGE }}:${DATE_TAG}
+
+          # Tag with version if this is a release
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            podman tag docker.io/tinybirdco/tinybird-local:latest ${{ env.TINYBIRD_IMAGE }}:${VERSION}
+            podman push ${{ env.TINYBIRD_IMAGE }}:${VERSION}
+          fi
+
+      - name: Verify images
+        run: |
+          echo "Images pushed successfully:"
+          podman images | grep tinybird-local
+
+  update-manifests:
+    name: Update Kubernetes Manifests
+    runs-on: ubuntu-latest
+    needs: [build-traffic-analytics, mirror-tinybird]
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITEA_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set image tags
+        id: tags
+        run: |
+          if [ "${{ github.ref_type }}" == "tag" ]; then
+            VERSION="${{ github.ref_name }}"
+            echo "tag=${VERSION}" >> $GITHUB_OUTPUT
+          else
+            SHORT_SHA=$(echo ${{ github.sha }} | cut -c1-7)
+            echo "tag=main-${SHORT_SHA}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update Kustomize image tags
+        run: |
+          cd k8s/overlays/prod
+
+          # Backup original
+          cp kustomization.yaml kustomization.yaml.bak
+
+          # Update images section
+          cat > images-patch.yaml <<EOF
+images:
+  - name: tinybirdco/tinybird-local
+    newName: ${{ env.TINYBIRD_IMAGE }}
+    newTag: latest
+  - name: ghost/traffic-analytics
+    newName: ${{ env.ANALYTICS_IMAGE }}
+    newTag: ${{ steps.tags.outputs.tag }}
+EOF
+
+          # Merge with existing kustomization
+          if ! grep -q "^images:" kustomization.yaml; then
+            cat images-patch.yaml >> kustomization.yaml
+          else
+            # Replace existing images section
+            sed -i '/^images:/,/^[a-z]/d' kustomization.yaml
+            cat images-patch.yaml >> kustomization.yaml
+          fi
+
+          rm images-patch.yaml kustomization.yaml.bak
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "gitea-actions[bot]"
+          git config user.email "gitea-actions[bot]@git.shadyknollcave.io"
+
+          if git diff --quiet k8s/overlays/prod/kustomization.yaml; then
+            echo "No changes to commit"
+            exit 0
+          fi
+
+          git add k8s/overlays/prod/kustomization.yaml
+          git commit -m "chore: update image tags to ${{ steps.tags.outputs.tag }}
+
+          Updated by Gitea Actions workflow
+          Commit: ${{ github.sha }}"
+
+          git push origin main
+
+      - name: Trigger ArgoCD sync (if configured)
+        run: |
+          echo "✅ Manifest updated. ArgoCD will auto-sync if configured."
+          echo "   Manual sync: argocd app sync tinybird-analytics"

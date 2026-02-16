@@ -1,0 +1,86 @@
+name: Validate Manifests
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'k8s/**'
+      - '.gitea/workflows/**'
+  push:
+    branches:
+      - main
+      - develop
+    paths:
+      - 'k8s/**'
+
+jobs:
+  validate-kubernetes:
+    name: Validate Kubernetes Manifests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up kubectl
+        run: |
+          curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
+          chmod +x kubectl
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Validate base manifests
+        run: |
+          echo "Validating base manifests..."
+          kubectl kustomize k8s/base > /tmp/base-manifests.yaml
+          kubectl apply --dry-run=client -f /tmp/base-manifests.yaml
+          echo "✅ Base manifests are valid"
+
+      - name: Validate production overlay
+        run: |
+          echo "Validating production overlay..."
+          kubectl kustomize k8s/overlays/prod > /tmp/prod-manifests.yaml
+          kubectl apply --dry-run=client -f /tmp/prod-manifests.yaml
+          echo "✅ Production overlay is valid"
+
+      - name: Install yamllint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y yamllint
+
+      - name: Check YAML syntax
+        run: |
+          cat > .yamllint.yaml <<EOF
+          extends: default
+          rules:
+            line-length:
+              max: 120
+              level: warning
+            indentation:
+              spaces: 2
+            document-start: disable
+            comments:
+              min-spaces-from-content: 1
+          EOF
+
+          yamllint -c .yamllint.yaml k8s/
+          echo "✅ YAML syntax is valid"
+
+      - name: Validate ArgoCD application
+        run: |
+          echo "Validating ArgoCD application manifest..."
+          kubectl apply --dry-run=client -f argocd-app.yaml
+          echo "✅ ArgoCD application is valid"
+
+      - name: Report validation results
+        if: success()
+        run: |
+          echo ""
+          echo "✅ All Kubernetes manifests are valid!"
+          echo ""
+          echo "Validated:"
+          echo "  ✓ Base manifests"
+          echo "  ✓ Production overlay"
+          echo "  ✓ ArgoCD application"
+          echo "  ✓ YAML syntax"
