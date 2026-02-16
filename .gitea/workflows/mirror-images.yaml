@@ -38,7 +38,7 @@ jobs:
 
       - name: Log in to Gitea Container Registry
         run: |
-          echo "${{ secrets.GITEA_TOKEN }}" | podman login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
+          echo "${{ secrets.GIT_TOKEN }}" | podman login ${{ env.REGISTRY }} -u ${{ env.REGISTRY_USER }} --password-stdin
 
       - name: Mirror ${{ matrix.name }}
         run: |

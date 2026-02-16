@@ -106,12 +106,12 @@ tea token create --name gitea-actions-ci --scopes write:package
 # Via web UI:
 # 1. Go to https://git.shadyknollcave.io/micro/tinybird/settings/secrets
 # 2. Add new secret
-# 3. Name: GITEA_TOKEN
+# 3. Name: GIT_TOKEN
 # 4. Value: <paste token>
 # 5. Save
 
 # Or via tea CLI:
-tea repo secret create --name GITEA_TOKEN --data <token>
+tea repo secret create --name GIT_TOKEN --data <token>
 ```
 
 ## Workflow Configuration
@@ -158,7 +158,7 @@ After successful workflow run:
 # https://git.shadyknollcave.io/micro/-/packages
 
 # Or via API:
-curl -u micro:$GITEA_TOKEN \
+curl -u micro:$GIT_TOKEN \
   https://git.shadyknollcave.io/api/v1/packages/micro?type=container
 
 # Pull image locally:
@@ -191,7 +191,7 @@ sudo journalctl -u act_runner -n 100
 **Verify token scope:**
 ```bash
 # Token needs write:package scope
-curl -H "Authorization: token $GITEA_TOKEN" \
+curl -H "Authorization: token $GIT_TOKEN" \
   https://git.shadyknollcave.io/api/v1/user
 ```
 
