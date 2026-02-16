@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: tinybird
+  namespace: analytics
+  labels:
+    app: tinybird
+spec:
+  type: ClusterIP
+  ports:
+  - port: 7181
+    targetPort: 7181
+    protocol: TCP
+    name: api
+  selector:
+    app: tinybird

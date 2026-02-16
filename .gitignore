@@ -1,0 +1,24 @@
+# Environment files
+.env
+.env.*
+!.env.template
+
+# Secrets
+*.key
+*.pem
+secrets/
+
+# Local data
+disk/
+data/
+*.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

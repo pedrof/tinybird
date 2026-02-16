@@ -1,0 +1,49 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: tinybird
+  namespace: analytics
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: cilium
+  tls:
+  - hosts:
+    - tinybird.shadyknollcave.io
+    secretName: tinybird-tls
+  rules:
+  - host: tinybird.shadyknollcave.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: tinybird
+            port:
+              number: 7181
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: traffic-analytics
+  namespace: analytics
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  ingressClassName: cilium
+  tls:
+  - hosts:
+    - analytics-proxy.shadyknollcave.io
+    secretName: traffic-analytics-tls
+  rules:
+  - host: analytics-proxy.shadyknollcave.io
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: traffic-analytics
+            port:
+              number: 3000

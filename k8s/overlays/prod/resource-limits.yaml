@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tinybird
+  namespace: analytics
+spec:
+  template:
+    spec:
+      containers:
+      - name: tinybird-local
+        resources:
+          requests:
+            memory: "6Gi"
+            cpu: "2000m"
+          limits:
+            memory: "12Gi"
+            cpu: "4000m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: traffic-analytics
+  namespace: analytics
+spec:
+  replicas: 2
+  template:
+    spec:
+      containers:
+      - name: traffic-analytics
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"

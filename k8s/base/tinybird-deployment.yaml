@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tinybird
+  namespace: analytics
+  labels:
+    app: tinybird
+    app.kubernetes.io/name: tinybird
+    app.kubernetes.io/component: analytics-engine
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Required for single-replica stateful workload
+  selector:
+    matchLabels:
+      app: tinybird
+  template:
+    metadata:
+      labels:
+        app: tinybird
+    spec:
+      containers:
+      - name: tinybird-local
+        image: tinybirdco/tinybird-local:latest
+        ports:
+        - containerPort: 7181
+          name: api
+          protocol: TCP
+        volumeMounts:
+        - name: clickhouse-data
+          mountPath: /var/lib/clickhouse
+        - name: redis-data
+          mountPath: /redis-data
+        resources:
+          requests:
+            memory: "4Gi"
+            cpu: "1000m"
+          limits:
+            memory: "8Gi"
+            cpu: "2000m"
+        livenessProbe:
+          httpGet:
+            path: /v0/
+            port: 7181
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /v0/
+            port: 7181
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+      volumes:
+      - name: clickhouse-data
+        persistentVolumeClaim:
+          claimName: tinybird-data
+      - name: redis-data
+        persistentVolumeClaim:
+          claimName: redis-data
