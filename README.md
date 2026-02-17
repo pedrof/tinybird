@@ -1,5 +1,7 @@
 # Tinybird Analytics for Ghost
 
+[![Gitea Actions](https://git.shadyknollcave.io/micro/tinybird/actions/workflows/build-and-push.yaml/badge.svg)](https://git.shadyknollcave.io/micro/tinybird/actions)
+
 Self-hosted Tinybird analytics deployment for Ghost blog integration.
 
 ## Architecture
