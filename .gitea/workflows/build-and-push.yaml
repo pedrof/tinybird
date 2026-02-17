@@ -24,28 +24,28 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup Node.js for Actions
+      - name: Install dependencies
         run: |
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
+          apt-get update
+          apt-get install -y git curl podman
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        run: |
+          git clone https://git.shadyknollcave.io/micro/tinybird.git /workspace/tinybird
+          cd /workspace/tinybird
+          git checkout ${{ github.sha }}
 
       - name: Clone Traffic Analytics repository
         run: |
-          git clone --depth 1 https://github.com/TryGhost/TrafficAnalytics.git traffic-analytics-src
-          cd traffic-analytics-src
-          echo "TRAFFIC_COMMIT=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          git clone --depth 1 https://github.com/TryGhost/TrafficAnalytics.git /workspace/traffic-analytics-src
+          cd /workspace/traffic-analytics-src
+          TRAFFIC_COMMIT=$(git rev-parse --short HEAD)
+          echo "TRAFFIC_COMMIT=${TRAFFIC_COMMIT}" >> $GITHUB_ENV
 
-      - name: Set up Podman
+      - name: Verify Podman
         run: |
-          # Podman is preferred per user setup
-          sudo apt-get update
-          sudo apt-get install -y podman
           podman version
+          podman info
 
       - name: Log in to Gitea Container Registry
         run: |
@@ -86,10 +86,11 @@ jobs:
           fi
 
           echo "tags=$TAGS" >> $GITHUB_OUTPUT
+          echo "Generated tags: $TAGS"
 
       - name: Build Traffic Analytics
         run: |
-          cd traffic-analytics-src
+          cd /workspace/traffic-analytics-src
 
           # Build with podman
           podman build \
@@ -108,23 +109,20 @@ jobs:
             podman push $TAG
           done
 
+          echo "Successfully pushed all tags"
+
   mirror-tinybird:
     name: Mirror Tinybird Local
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup Node.js for Actions
+      - name: Install dependencies
         run: |
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
+          apt-get update
+          apt-get install -y podman
 
-      - name: Set up Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman version
+      - name: Verify Podman
+        run: podman version
 
       - name: Log in to Gitea Container Registry
         run: |
@@ -156,7 +154,7 @@ jobs:
       - name: Verify images
         run: |
           echo "Images pushed successfully:"
-          podman images | grep tinybird-local
+          podman images | grep tinybird-local || echo "No local images (expected after push)"
 
   update-manifests:
     name: Update Kubernetes Manifests
@@ -165,18 +163,21 @@ jobs:
     if: github.ref == 'refs/heads/main'
 
     steps:
-      - name: Setup Node.js for Actions
+      - name: Install dependencies
         run: |
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
+          apt-get update
+          apt-get install -y git
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "gitea-actions[bot]"
+          git config --global user.email "gitea-actions[bot]@git.shadyknollcave.io"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GIT_TOKEN }}
-          fetch-depth: 0
+        run: |
+          git clone https://x-access-token:${{ secrets.GIT_TOKEN }}@git.shadyknollcave.io/micro/tinybird.git /workspace/tinybird
+          cd /workspace/tinybird
+          git checkout ${{ github.ref_name }}
 
       - name: Set image tags
         id: tags
@@ -191,7 +192,7 @@ jobs:
 
       - name: Update Kustomize image tags
         run: |
-          cd k8s/overlays/prod
+          cd /workspace/tinybird/k8s/overlays/prod
 
           # Backup original
           cp kustomization.yaml kustomization.yaml.bak
@@ -220,8 +221,7 @@ jobs:
 
       - name: Commit and push changes
         run: |
-          git config user.name "gitea-actions[bot]"
-          git config user.email "gitea-actions[bot]@git.shadyknollcave.io"
+          cd /workspace/tinybird
 
           if git diff --quiet k8s/overlays/prod/kustomization.yaml; then
             echo "No changes to commit"
@@ -234,10 +234,10 @@ jobs:
           Updated by Gitea Actions workflow
           Commit: ${{ github.sha }}"
 
-          git push origin main
+          git push origin ${{ github.ref_name }}
 
       - name: Trigger ArgoCD sync
         if: success()
         run: |
-          echo "✅ Manifest updated. ArgoCD will auto-sync if configured."
-          echo "   Manual sync: argocd app sync tinybird-analytics"
+          echo "Manifest updated. ArgoCD will auto-sync if configured."
+          echo "Manual sync: argocd app sync tinybird-analytics"

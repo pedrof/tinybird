@@ -30,18 +30,13 @@ jobs:
             name: Tinybird Local Beta
 
     steps:
-      - name: Setup Node.js for Actions
+      - name: Install dependencies
         run: |
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
+          apt-get update
+          apt-get install -y podman
 
-      - name: Set up Podman
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y podman
-          podman version
+      - name: Verify Podman
+        run: podman version
 
       - name: Log in to Gitea Container Registry
         run: |
@@ -66,11 +61,11 @@ jobs:
           podman tag ${{ matrix.source }} $DATE_TARGET
           podman push $DATE_TARGET
 
-          echo "✅ Successfully mirrored ${{ matrix.name }}"
+          echo "Successfully mirrored ${{ matrix.name }}"
 
       - name: Report success
         if: success()
         run: |
-          echo "✅ All images mirrored successfully"
+          echo "All images mirrored successfully"
           echo "Images are now available at:"
           echo "  ${{ env.REGISTRY }}/${{ env.REGISTRY_USER }}/tinybird-local"

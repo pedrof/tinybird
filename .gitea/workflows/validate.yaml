@@ -21,43 +21,45 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Setup Node.js for Actions
+      - name: Install dependencies
         run: |
-          if ! command -v node &> /dev/null; then
-            curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-            sudo apt-get install -y nodejs
-          fi
+          apt-get update
+          apt-get install -y git curl yamllint
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        run: |
+          git clone https://git.shadyknollcave.io/micro/tinybird.git /workspace/tinybird
+          cd /workspace/tinybird
+          git checkout ${{ github.sha }}
 
       - name: Set up kubectl
         run: |
           curl -LO "https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl"
           chmod +x kubectl
-          sudo mv kubectl /usr/local/bin/
+          mv kubectl /usr/local/bin/
+
+      - name: Verify kubectl
+        run: kubectl version --client
 
       - name: Validate base manifests
         run: |
+          cd /workspace/tinybird
           echo "Validating base manifests..."
           kubectl kustomize k8s/base > /tmp/base-manifests.yaml
           kubectl apply --dry-run=client -f /tmp/base-manifests.yaml
-          echo "✅ Base manifests are valid"
+          echo "Base manifests are valid"
 
       - name: Validate production overlay
         run: |
+          cd /workspace/tinybird
           echo "Validating production overlay..."
           kubectl kustomize k8s/overlays/prod > /tmp/prod-manifests.yaml
           kubectl apply --dry-run=client -f /tmp/prod-manifests.yaml
-          echo "✅ Production overlay is valid"
-
-      - name: Install yamllint
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y yamllint
+          echo "Production overlay is valid"
 
       - name: Check YAML syntax
         run: |
+          cd /workspace/tinybird
           cat > .yamllint.yaml <<EOF
           extends: default
           rules:
@@ -72,22 +74,23 @@ jobs:
           EOF
 
           yamllint -c .yamllint.yaml k8s/
-          echo "✅ YAML syntax is valid"
+          echo "YAML syntax is valid"
 
       - name: Validate ArgoCD application
         run: |
+          cd /workspace/tinybird
           echo "Validating ArgoCD application manifest..."
           kubectl apply --dry-run=client -f argocd-app.yaml
-          echo "✅ ArgoCD application is valid"
+          echo "ArgoCD application is valid"
 
       - name: Report validation results
         if: success()
         run: |
           echo ""
-          echo "✅ All Kubernetes manifests are valid!"
+          echo "All Kubernetes manifests are valid!"
           echo ""
           echo "Validated:"
-          echo "  ✓ Base manifests"
-          echo "  ✓ Production overlay"
-          echo "  ✓ ArgoCD application"
-          echo "  ✓ YAML syntax"
+          echo "  - Base manifests"
+          echo "  - Production overlay"
+          echo "  - ArgoCD application"
+          echo "  - YAML syntax"
