@@ -215,7 +215,8 @@ EOF
 
           git push origin main
 
-      - name: Trigger ArgoCD sync (if configured)
+      - name: Trigger ArgoCD sync
+        if: success()
         run: |
           echo "✅ Manifest updated. ArgoCD will auto-sync if configured."
           echo "   Manual sync: argocd app sync tinybird-analytics"
