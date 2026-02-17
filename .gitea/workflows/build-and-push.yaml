@@ -176,15 +176,15 @@ jobs:
           cp kustomization.yaml kustomization.yaml.bak
 
           # Update images section
-          cat > images-patch.yaml <<EOF
-images:
-  - name: tinybirdco/tinybird-local
-    newName: ${{ env.TINYBIRD_IMAGE }}
-    newTag: latest
-  - name: ghost/traffic-analytics
-    newName: ${{ env.ANALYTICS_IMAGE }}
-    newTag: ${{ steps.tags.outputs.tag }}
-EOF
+          cat > images-patch.yaml <<-EOF
+          images:
+            - name: tinybirdco/tinybird-local
+              newName: ${{ env.TINYBIRD_IMAGE }}
+              newTag: latest
+            - name: ghost/traffic-analytics
+              newName: ${{ env.ANALYTICS_IMAGE }}
+              newTag: ${{ steps.tags.outputs.tag }}
+          EOF
 
           # Merge with existing kustomization
           if ! grep -q "^images:" kustomization.yaml; then
